@@ -9,7 +9,7 @@ services:
     region: oregon  # or singapore, frankfurt, ohio
     plan: free  # or starter, standard, pro
     branch: main
-    healthCheckPath: /actuator/health
+    healthCheckPath: /health
     envVars:
       - key: MONGODB_URI
         sync: false  # Must be set manually in Render dashboard
@@ -19,3 +19,8 @@ services:
         value: prod
       - key: JAVA_OPTS
         value: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
+# Cron job to keep the app alive (prevents spin-down on free tier)
+# Runs every 14 minutes to keep the app from sleeping
+# Note: Cron jobs require a paid plan on Render
+# For free tier, use external services like cron-job.org or UptimeRobot
