@@ -1,18 +1,57 @@
-# Use OpenJDK 23 as base image
-FROM openjdk:23
+# ============================================
+# Multi-stage Dockerfile for Render Deployment
+# ============================================
 
-# Add a volume pointing to /tmp
-VOLUME /tmp
+# Stage 1: Build the application
+FROM eclipse-temurin:17-jdk-alpine AS builder
 
-# Expose port 8080
+# Set working directory
+WORKDIR /app
+
+# Copy Maven wrapper and pom.xml first (for better caching)
+COPY .mvn/ .mvn
+COPY mvnw pom.xml ./
+
+# Download dependencies (cached layer)
+RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
+
+# Copy source code
+COPY src/ src/
+
+# Build the application (skip tests for faster builds)
+RUN ./mvnw clean package -DskipTests -B
+
+# Stage 2: Runtime image
+FROM eclipse-temurin:17-jre-alpine
+
+# Add labels for better container management
+LABEL maintainer="aayushisolanki"
+LABEL description="Expense Tracker Spring Boot Application"
+
+# Create non-root user for security
+RUN addgroup -S spring && adduser -S spring -G spring
+
+# Set working directory
+WORKDIR /app
+
+# Copy jar from builder stage
+COPY --from=builder /app/target/*.jar app.jar
+
+# Change ownership to non-root user
+RUN chown spring:spring app.jar
+
+# Switch to non-root user
+USER spring
+
+# Expose the application port
 EXPOSE 8080
 
-# The application's jar file
-ARG JAR_FILE=target/expensetracker-0.0.1-SNAPSHOT.jar
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health || exit 1
 
-# Add the application's jar to the container
-ADD ${JAR_FILE} app.jar
+# JVM optimization for containers
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -Djava.security.egd=file:/dev/./urandom"
 
-# Run the jar file
-ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app.jar"]
-
+# Run the application
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
